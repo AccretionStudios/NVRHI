@@ -224,6 +224,7 @@ namespace nvrhi::d3d12
         bool hasOptions5 = SUCCEEDED(m_Context.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &m_Options5, sizeof(m_Options5)));
         bool hasOptions6 = SUCCEEDED(m_Context.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS6, &m_Options6, sizeof(m_Options6)));
         bool hasOptions7 = SUCCEEDED(m_Context.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &m_Options7, sizeof(m_Options7)));
+        bool hasOptions12 = SUCCEEDED(m_Context.device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &m_Options12, sizeof(m_Options12)));
 
         if (SUCCEEDED(m_Context.device->QueryInterface(&m_Context.device5)) && hasOptions5)
         {
@@ -252,6 +253,13 @@ namespace nvrhi::d3d12
         if (SUCCEEDED(m_Context.device->QueryInterface(&m_Context.device8)) && hasOptions7)
         {
             m_SamplerFeedbackSupported = m_Options7.SamplerFeedbackTier >= D3D12_SAMPLER_FEEDBACK_TIER_0_9;
+        }
+
+        if (SUCCEEDED(m_Context.device->QueryInterface(&m_Context.device10)) && hasOptions12 && desc.enableEnhancedBarriers)
+        {
+#ifndef NVRHI_WITH_RTXMU // RTXMU doesn't implement Enhanced Barriers, and we need to interop with it.
+            m_EnhancedBarriersSupported = m_Options12.EnhancedBarriersSupported;
+#endif
         }
 
 #if NVRHI_D3D12_WITH_COOP_VECTOR_COMMON
@@ -837,6 +845,8 @@ namespace nvrhi::d3d12
 #else
             return m_CoopVecTrainingSupported;
 #endif
+        case Feature::EnhancedBarriers:
+            return m_EnhancedBarriersSupported;
         default:
             return false;
         }

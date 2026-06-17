@@ -149,6 +149,7 @@ namespace nvrhi::d3d12
         RefCountPtr<ID3D12Device2> device2;
         RefCountPtr<ID3D12Device5> device5;
         RefCountPtr<ID3D12Device8> device8;
+        RefCountPtr<ID3D12Device10> device10;
 #if NVRHI_D3D12_WITH_COOP_VECTOR_COMMON
         RefCountPtr<ID3D12DevicePreview> devicePreview;
 #endif
@@ -287,14 +288,14 @@ namespace nvrhi::d3d12
     {
     public:
         const TextureDesc desc;
-        const D3D12_RESOURCE_DESC resourceDesc;
+        const D3D12_RESOURCE_DESC1 resourceDesc;
         RefCountPtr<ID3D12Resource> resource;
         uint8_t planeCount = 1;
         HANDLE sharedHandle = nullptr;
         HeapHandle heap;
 
 
-        Texture(const Context& context, DeviceResources& resources, TextureDesc desc, const D3D12_RESOURCE_DESC& resourceDesc)
+        Texture(const Context& context, DeviceResources& resources, TextureDesc desc, const D3D12_RESOURCE_DESC1& resourceDesc)
             : TextureStateExtension(this->desc)
             , desc(std::move(desc))
             , resourceDesc(resourceDesc)
@@ -335,7 +336,7 @@ namespace nvrhi::d3d12
         const BufferDesc desc;
         RefCountPtr<ID3D12Resource> resource;
         D3D12_GPU_VIRTUAL_ADDRESS gpuVA{};
-        D3D12_RESOURCE_DESC resourceDesc{};
+        D3D12_RESOURCE_DESC1 resourceDesc{};
 
         HeapHandle heap;
 
@@ -375,7 +376,7 @@ namespace nvrhi::d3d12
     {
     public:
         TextureDesc desc;
-        D3D12_RESOURCE_DESC resourceDesc{};
+        D3D12_RESOURCE_DESC1 resourceDesc{};
         RefCountPtr<Buffer> buffer;
         CpuAccessMode cpuAccess = CpuAccessMode::None;
         std::vector<UINT64> subresourceOffsets;
@@ -724,6 +725,16 @@ namespace nvrhi::d3d12
 
     D3D12_RESOURCE_STATES convertResourceStates(ResourceStates stateBits);
     
+    struct EnhancedResourceStateMapping
+    {
+        ResourceStates nvrhiState;
+        D3D12_BARRIER_SYNC sync;
+        D3D12_BARRIER_ACCESS access;
+        D3D12_BARRIER_LAYOUT layout;
+    };
+
+    EnhancedResourceStateMapping convertResourceStatesForEnhancedBarriers(ResourceStates state, bool isTexture);
+    
     class BufferChunk
     {
     public:
@@ -956,6 +967,7 @@ namespace nvrhi::d3d12
         RefCountPtr<ID3D12GraphicsCommandList> commandList;
         RefCountPtr<ID3D12GraphicsCommandList4> commandList4;
         RefCountPtr<ID3D12GraphicsCommandList6> commandList6;
+        RefCountPtr<ID3D12GraphicsCommandList7> commandList7;
 #if NVRHI_D3D12_WITH_COOP_VECTOR_COMMON
         RefCountPtr<ID3D12GraphicsCommandListPreview> commandListPreview;
 #endif
@@ -1124,7 +1136,7 @@ namespace nvrhi::d3d12
             D3D12_GPU_VIRTUAL_ADDRESS address;
         };
         
-        IDevice* m_Device;
+        Device* m_Device;
         Queue* m_Queue;
         CommandListLifetimeTrackerHandle m_LifetimeTracker;
         UploadManager m_UploadManager;
@@ -1164,7 +1176,10 @@ namespace nvrhi::d3d12
         std::unordered_map<IBuffer*, D3D12_GPU_VIRTUAL_ADDRESS> m_VolatileConstantBufferAddresses;
         bool m_AnyVolatileBufferWrites = false;
 
-        std::vector<D3D12_RESOURCE_BARRIER> m_D3DBarriers; // Used locally in commitBarriers, member to avoid re-allocations
+        // The barrier vectors are only used locally in commitBarriers. They are class members to avoid re-allocations.
+        std::vector<D3D12_RESOURCE_BARRIER> m_D3DBarriers;
+        std::vector<D3D12_TEXTURE_BARRIER> m_D3DTextureBarriers;
+        std::vector<D3D12_BUFFER_BARRIER> m_D3DBufferBarriers;
 
         // Bound volatile buffer state. Saves currently bound volatile buffers and their current GPU VAs.
         // Necessary to patch the bound VAs when a buffer is updated between setGraphicsState and draw, or between draws.
@@ -1312,6 +1327,7 @@ namespace nvrhi::d3d12
         bool GetNvapiIsInitialized() const { return m_NvapiIsInitialized; }
         bool GetOpacityMicromapSupported() const { return m_OpacityMicromapSupported; }
         bool GetLinearSweptSpheresSupported( ) const { return m_LinearSweptSpheresSupported; }
+        bool GetEnhancedBarriersSupported() const { return m_EnhancedBarriersSupported; }
 
     private:
         Context m_Context;
@@ -1336,6 +1352,7 @@ namespace nvrhi::d3d12
         bool m_SpheresSupported = false;
         bool m_ShaderExecutionReorderingSupported = false;
         bool m_SamplerFeedbackSupported = false;
+        bool m_EnhancedBarriersSupported = false;
         bool m_AftermathEnabled = false;
         bool m_RayTracingValidationEnabled = false;
         void* m_RayTracingValidationCallbackHandle = nullptr;
@@ -1354,6 +1371,7 @@ namespace nvrhi::d3d12
         D3D12_FEATURE_DATA_D3D12_OPTIONS5 m_Options5 = {};
         D3D12_FEATURE_DATA_D3D12_OPTIONS6 m_Options6 = {};
         D3D12_FEATURE_DATA_D3D12_OPTIONS7 m_Options7 = {};
+        D3D12_FEATURE_DATA_D3D12_OPTIONS12 m_Options12 = {};
 
         RefCountPtr<RootSignature> getRootSignature(const static_vector<BindingLayoutHandle, c_MaxBindingLayouts>& pipelineLayouts, bool allowInputLayout);
         RefCountPtr<ID3D12PipelineState> createPipelineState(const GraphicsPipelineDesc& desc, RootSignature* pRS, const FramebufferInfo& fbinfo) const;

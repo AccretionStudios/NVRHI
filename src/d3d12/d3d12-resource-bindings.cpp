@@ -307,7 +307,8 @@ namespace nvrhi::d3d12
                             texture->createUAV(descriptorHandle.ptr);
                             pResource = texture;
 
-                            // TODO: Automatic state transition into Unordered Access here
+                            assert(!texture->permanentState); // Sampler feedback textures cannot and shouldn't have a permanent state
+                            bindingsThatNeedTransitions.push_back(static_cast<uint16_t>(bindingIndex));
 
                             hasUavBindings = true;
                             found = true;

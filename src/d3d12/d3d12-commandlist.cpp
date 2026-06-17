@@ -105,6 +105,7 @@ namespace nvrhi::d3d12
 
         commandList->commandList->QueryInterface(IID_PPV_ARGS(&commandList->commandList4));
         commandList->commandList->QueryInterface(IID_PPV_ARGS(&commandList->commandList6));
+        commandList->commandList->QueryInterface(IID_PPV_ARGS(&commandList->commandList7));
 #if NVRHI_D3D12_WITH_COOP_VECTOR_COMMON
         commandList->commandList->QueryInterface(IID_PPV_ARGS(&commandList->commandListPreview));
 #endif

@@ -276,6 +276,159 @@ namespace nvrhi::d3d12
         return result;
     }
 
+    static const EnhancedResourceStateMapping g_ResourceStateMap[] =
+    {
+        { ResourceStates::Common,
+            D3D12_BARRIER_SYNC_ALL,
+            D3D12_BARRIER_ACCESS_COMMON,
+            D3D12_BARRIER_LAYOUT_COMMON },
+        { ResourceStates::ConstantBuffer,
+            D3D12_BARRIER_SYNC_ALL_SHADING,
+            D3D12_BARRIER_ACCESS_CONSTANT_BUFFER,
+            D3D12_BARRIER_LAYOUT_COMMON },
+        { ResourceStates::VertexBuffer,
+            D3D12_BARRIER_SYNC_ALL_SHADING,
+            D3D12_BARRIER_ACCESS_VERTEX_BUFFER,
+            D3D12_BARRIER_LAYOUT_COMMON },
+        { ResourceStates::IndexBuffer,
+            D3D12_BARRIER_SYNC_INDEX_INPUT,
+            D3D12_BARRIER_ACCESS_INDEX_BUFFER,
+            D3D12_BARRIER_LAYOUT_COMMON },
+        { ResourceStates::IndirectArgument,
+            D3D12_BARRIER_SYNC_EXECUTE_INDIRECT,
+            D3D12_BARRIER_ACCESS_INDIRECT_ARGUMENT,
+            D3D12_BARRIER_LAYOUT_COMMON },
+        { ResourceStates::PixelShaderResource,
+            D3D12_BARRIER_SYNC_PIXEL_SHADING,
+            D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
+            D3D12_BARRIER_LAYOUT_SHADER_RESOURCE },
+        { ResourceStates::NonPixelShaderResource,
+            D3D12_BARRIER_SYNC_NON_PIXEL_SHADING,
+            D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
+            D3D12_BARRIER_LAYOUT_SHADER_RESOURCE },
+        { ResourceStates::UnorderedAccess,
+            D3D12_BARRIER_SYNC_ALL_SHADING,
+            D3D12_BARRIER_ACCESS_UNORDERED_ACCESS,
+            D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS },
+        { ResourceStates::RenderTarget,
+            D3D12_BARRIER_SYNC_RENDER_TARGET,
+            D3D12_BARRIER_ACCESS_RENDER_TARGET,
+            D3D12_BARRIER_LAYOUT_RENDER_TARGET },
+        { ResourceStates::DepthWrite,
+            D3D12_BARRIER_SYNC_DEPTH_STENCIL,
+            D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE,
+            D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE },
+        { ResourceStates::DepthRead,
+            D3D12_BARRIER_SYNC_DEPTH_STENCIL,
+            D3D12_BARRIER_ACCESS_DEPTH_STENCIL_READ,
+            D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_READ },
+        { ResourceStates::StreamOut,
+            D3D12_BARRIER_SYNC_VERTEX_SHADING,
+            D3D12_BARRIER_ACCESS_STREAM_OUTPUT,
+            D3D12_BARRIER_LAYOUT_COMMON },
+        { ResourceStates::CopyDest,
+            D3D12_BARRIER_SYNC_COPY,
+            D3D12_BARRIER_ACCESS_COPY_DEST,
+            D3D12_BARRIER_LAYOUT_COPY_DEST },
+        { ResourceStates::CopySource,
+            D3D12_BARRIER_SYNC_COPY,
+            D3D12_BARRIER_ACCESS_COPY_SOURCE,
+            D3D12_BARRIER_LAYOUT_COPY_SOURCE },
+        { ResourceStates::ResolveDest,
+            D3D12_BARRIER_SYNC_RESOLVE,
+            D3D12_BARRIER_ACCESS_RESOLVE_DEST,
+            D3D12_BARRIER_LAYOUT_RESOLVE_DEST },
+        { ResourceStates::ResolveSource,
+            D3D12_BARRIER_SYNC_RESOLVE,
+            D3D12_BARRIER_ACCESS_RESOLVE_SOURCE,
+            D3D12_BARRIER_LAYOUT_RESOLVE_SOURCE },
+        { ResourceStates::Present,
+            D3D12_BARRIER_SYNC_ALL,
+            D3D12_BARRIER_ACCESS_COPY_SOURCE,
+            D3D12_BARRIER_LAYOUT_PRESENT },
+        { ResourceStates::AccelStructRead,
+            D3D12_BARRIER_SYNC_ALL_SHADING, // Could be an RT pipeline or other shaders
+            D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_READ,
+            D3D12_BARRIER_LAYOUT_COMMON },
+        { ResourceStates::AccelStructWrite,
+            D3D12_BARRIER_SYNC_BUILD_RAYTRACING_ACCELERATION_STRUCTURE,
+            D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_READ | D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_WRITE,
+            D3D12_BARRIER_LAYOUT_COMMON },
+        { ResourceStates::AccelStructBuildInput,
+            D3D12_BARRIER_SYNC_BUILD_RAYTRACING_ACCELERATION_STRUCTURE,
+            D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
+            D3D12_BARRIER_LAYOUT_COMMON },
+        { ResourceStates::AccelStructBuildBlas,
+            D3D12_BARRIER_SYNC_BUILD_RAYTRACING_ACCELERATION_STRUCTURE,
+            D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_READ,
+            D3D12_BARRIER_LAYOUT_COMMON },
+        { ResourceStates::ShadingRateSurface,
+            D3D12_BARRIER_SYNC_ALL_SHADING,
+            D3D12_BARRIER_ACCESS_SHADING_RATE_SOURCE,
+            D3D12_BARRIER_LAYOUT_SHADING_RATE_SOURCE },
+        { ResourceStates::OpacityMicromapWrite,
+            D3D12_BARRIER_SYNC_BUILD_RAYTRACING_ACCELERATION_STRUCTURE,
+            D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_WRITE,
+            D3D12_BARRIER_LAYOUT_COMMON },
+        { ResourceStates::OpacityMicromapBuildInput,
+            D3D12_BARRIER_SYNC_ALL_SHADING,
+            D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
+            D3D12_BARRIER_LAYOUT_SHADER_RESOURCE },
+        { ResourceStates::ConvertCoopVecMatrixInput,
+            D3D12_BARRIER_SYNC_CONVERT_LINEAR_ALGEBRA_MATRIX,
+            D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
+            D3D12_BARRIER_LAYOUT_SHADER_RESOURCE },
+        { ResourceStates::ConvertCoopVecMatrixOutput,
+            D3D12_BARRIER_SYNC_CONVERT_LINEAR_ALGEBRA_MATRIX,
+            D3D12_BARRIER_ACCESS_UNORDERED_ACCESS,
+            D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS },
+    };
+
+    EnhancedResourceStateMapping convertResourceStatesForEnhancedBarriers(ResourceStates state, bool isTexture)
+    {
+        EnhancedResourceStateMapping result = {};
+
+        constexpr uint32_t numStateBits = sizeof(g_ResourceStateMap) / sizeof(g_ResourceStateMap[0]);
+
+        uint32_t stateTmp = uint32_t(state);
+        uint32_t bitIndex = 0;
+
+        while (stateTmp != 0 && bitIndex < numStateBits)
+        {
+            uint32_t bit = (1 << bitIndex);
+
+            if (stateTmp & bit)
+            {
+                const EnhancedResourceStateMapping& mapping = g_ResourceStateMap[bitIndex];
+
+                assert(uint32_t(mapping.nvrhiState) == bit);
+
+                result.nvrhiState = ResourceStates(result.nvrhiState | mapping.nvrhiState);
+                result.access |= mapping.access;
+                result.sync |= mapping.sync;
+                if (isTexture)
+                {
+                    if (result.layout == D3D12_BARRIER_LAYOUT_COMMON)
+                    {
+                        result.layout = mapping.layout;
+                    }
+                    else
+                    {
+                        assert(result.layout == mapping.layout);
+                    }
+                }
+
+                stateTmp &= ~bit;
+            }
+
+            bitIndex++;
+        }
+
+        assert(result.nvrhiState == state);
+
+        return result;
+    }
+
     D3D12_SHADING_RATE convertPixelShadingRate(VariableShadingRate shadingRate)
     {
         switch (shadingRate)

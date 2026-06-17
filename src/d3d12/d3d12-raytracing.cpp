@@ -2067,7 +2067,7 @@ namespace nvrhi::d3d12
 #else
         D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO ASPreBuildInfo = {};
 
-        if (!checked_cast<d3d12::Device*>(m_Device)->GetAccelStructPreBuildInfo(ASPreBuildInfo, as->getDesc()))
+        if (!m_Device->GetAccelStructPreBuildInfo(ASPreBuildInfo, as->getDesc()))
             return;
 
         if (ASPreBuildInfo.ResultDataMaxSizeInBytes > as->dataBuffer->desc.byteSize)
@@ -2105,8 +2105,7 @@ namespace nvrhi::d3d12
         commitBarriers();
 
 #if NVRHI_WITH_NVAPI_OPACITY_MICROMAP || NVRHI_WITH_NVAPI_LSS
-        d3d12::Device* d3d12Device = checked_cast<d3d12::Device*>(m_Device);
-        if (d3d12Device->GetOpacityMicromapSupported() || d3d12Device->GetLinearSweptSpheresSupported())
+        if (m_Device->GetOpacityMicromapSupported() || m_Device->GetLinearSweptSpheresSupported())
         {
             NVAPI_D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC_EX buildDesc = {};
             buildDesc.inputs = inputs.GetAs<NVAPI_D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS_EX>();

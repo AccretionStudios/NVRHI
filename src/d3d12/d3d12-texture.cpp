@@ -164,7 +164,8 @@ namespace nvrhi::d3d12
         assert(subresource < subresourceOffsets.size());
 
 		UINT64 size = 0;
-        device->GetCopyableFootprints(&resourceDesc, subresource, 1, subresourceOffsets[subresource], &ret.footprint, nullptr, nullptr, &size);
+        device->GetCopyableFootprints(reinterpret_cast<D3D12_RESOURCE_DESC const*>(&resourceDesc), subresource, 1,
+            subresourceOffsets[subresource], &ret.footprint, nullptr, nullptr, &size);
         ret.offset = off_t(ret.footprint.Offset);
 		ret.size = size;
         return ret;
@@ -179,7 +180,7 @@ namespace nvrhi::d3d12
 
         // compute size of last subresource
         UINT64 lastSubresourceSize;
-        device->GetCopyableFootprints(&resourceDesc, lastSubresource, 1, 0,
+        device->GetCopyableFootprints(reinterpret_cast<D3D12_RESOURCE_DESC const*>(&resourceDesc), lastSubresource, 1, 0,
             nullptr, nullptr, nullptr, &lastSubresourceSize);
 
         return subresourceOffsets[lastSubresource] + lastSubresourceSize;
@@ -197,7 +198,7 @@ namespace nvrhi::d3d12
         for (UINT i = 0; i < lastSubresource + 1; i++)
         {
             UINT64 subresourceSize;
-            device->GetCopyableFootprints(&resourceDesc, i, 1, 0,
+            device->GetCopyableFootprints(reinterpret_cast<D3D12_RESOURCE_DESC const*>(&resourceDesc), i, 1, 0,
                 nullptr, nullptr, nullptr, &subresourceSize);
 
             subresourceOffsets[i] = baseOffset;
@@ -228,12 +229,12 @@ namespace nvrhi::d3d12
         }
     }
 
-    static D3D12_RESOURCE_DESC convertTextureDesc(const TextureDesc& d)
+    static D3D12_RESOURCE_DESC1 convertTextureDesc(const TextureDesc& d)
     {
         const auto& formatMapping = getDxgiFormatMapping(d.format);
         const FormatInfo& formatInfo = getFormatInfo(d.format);
 
-        D3D12_RESOURCE_DESC desc = {};
+        D3D12_RESOURCE_DESC1 desc = {};
         desc.Width = d.width;
         desc.Height = d.height;
         desc.MipLevels = UINT16(d.mipLevels);
@@ -308,7 +309,7 @@ namespace nvrhi::d3d12
 
     TextureHandle Device::createTexture(const TextureDesc & d)
     {
-        D3D12_RESOURCE_DESC rd = convertTextureDesc(d);
+        D3D12_RESOURCE_DESC1 rd = convertTextureDesc(d);
         D3D12_HEAP_PROPERTIES heapProps = {};
         D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE;
 
@@ -338,25 +339,56 @@ namespace nvrhi::d3d12
             return TextureHandle::Create(texture);
         }
 
+        D3D12_RESOURCE_STATES const initialState = convertResourceStates(d.initialState);
+        D3D12_BARRIER_LAYOUT const initialLayout = convertResourceStatesForEnhancedBarriers(d.initialState, true).layout;
+
         if (d.isTiled)
         {
-            hr = m_Context.device->CreateReservedResource(
-                &texture->resourceDesc,
-                convertResourceStates(d.initialState),
-                d.useClearValue ? &clearValue : nullptr,
-                IID_PPV_ARGS(&texture->resource));
+            if (m_EnhancedBarriersSupported)
+            {
+                hr = m_Context.device10->CreateReservedResource2(
+                    reinterpret_cast<D3D12_RESOURCE_DESC const*>(&texture->resourceDesc),
+                    initialLayout,
+                    d.useClearValue ? &clearValue : nullptr,
+                    nullptr,
+                    0, nullptr,
+                    IID_PPV_ARGS(&texture->resource));
+            }
+            else
+            {
+                hr = m_Context.device->CreateReservedResource(
+                    reinterpret_cast<D3D12_RESOURCE_DESC const*>(&texture->resourceDesc),
+                    initialState,
+                    d.useClearValue ? &clearValue : nullptr,
+                    IID_PPV_ARGS(&texture->resource));
+            }
         }
         else
         {
             heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
 
-            hr = m_Context.device->CreateCommittedResource(
-                &heapProps,
-                heapFlags,
-                &texture->resourceDesc,
-                convertResourceStates(d.initialState),
-                d.useClearValue ? &clearValue : nullptr,
-                IID_PPV_ARGS(&texture->resource));
+            if (m_EnhancedBarriersSupported)
+            {
+                hr = m_Context.device10->CreateCommittedResource3(
+                    &heapProps,
+                    heapFlags,
+                    &texture->resourceDesc,
+                    initialLayout,
+                    d.useClearValue ? &clearValue : nullptr,
+                    nullptr,
+                    0, nullptr,
+                    IID_PPV_ARGS(&texture->resource));
+            }
+            else
+            {
+                hr = m_Context.device->CreateCommittedResource(
+                    &heapProps,
+                    heapFlags,
+                    reinterpret_cast<D3D12_RESOURCE_DESC const*>(&texture->resourceDesc),
+                    initialState,
+                    d.useClearValue ? &clearValue : nullptr,
+                    IID_PPV_ARGS(&texture->resource));
+            }
         }
 
         if (FAILED(hr))
@@ -402,11 +434,25 @@ namespace nvrhi::d3d12
     {
         Texture* texture = checked_cast<Texture*>(_texture);
         
-        D3D12_RESOURCE_ALLOCATION_INFO allocInfo = m_Context.device->GetResourceAllocationInfo(1, 1, &texture->resourceDesc);
+        MemoryRequirements memReq{};
 
-        MemoryRequirements memReq;
-        memReq.alignment = allocInfo.Alignment;
-        memReq.size = allocInfo.SizeInBytes;
+        if (m_EnhancedBarriersSupported)
+        {
+            D3D12_RESOURCE_ALLOCATION_INFO1 allocInfo{};
+            m_Context.device8->GetResourceAllocationInfo2(1, 1, &texture->resourceDesc, &allocInfo);
+
+            memReq.alignment = allocInfo.Alignment;
+            memReq.size = allocInfo.SizeInBytes;
+        }
+        else
+        {
+            D3D12_RESOURCE_ALLOCATION_INFO allocInfo = m_Context.device->GetResourceAllocationInfo(
+                1, 1, reinterpret_cast<D3D12_RESOURCE_DESC const*>(&texture->resourceDesc));
+            
+            memReq.alignment = allocInfo.Alignment;
+            memReq.size = allocInfo.SizeInBytes;
+        }
+
         return memReq;
     }
 
@@ -422,14 +468,30 @@ namespace nvrhi::d3d12
             return false; // not supported
 
 
-        D3D12_CLEAR_VALUE clearValue = convertTextureClearValue(texture->desc);
+        D3D12_CLEAR_VALUE const clearValue = convertTextureClearValue(texture->desc);
+        D3D12_RESOURCE_STATES const initialState = convertResourceStates(texture->desc.initialState);
+        D3D12_BARRIER_LAYOUT const initialLayout = convertResourceStatesForEnhancedBarriers(texture->desc.initialState, true).layout;
 
-        HRESULT hr = m_Context.device->CreatePlacedResource(
-            heap->heap, offset,
-            &texture->resourceDesc,
-            convertResourceStates(texture->desc.initialState),
-            texture->desc.useClearValue ? &clearValue : nullptr,
-            IID_PPV_ARGS(&texture->resource));
+        HRESULT hr;
+        if (m_EnhancedBarriersSupported)
+        {
+            hr = m_Context.device10->CreatePlacedResource2(
+                heap->heap, offset,
+                &texture->resourceDesc,
+                initialLayout,
+                texture->desc.useClearValue ? &clearValue : nullptr,
+                0, nullptr,
+                IID_PPV_ARGS(&texture->resource));
+        }
+        else
+        {
+            hr = m_Context.device->CreatePlacedResource(
+                heap->heap, offset,
+                reinterpret_cast<D3D12_RESOURCE_DESC const*>(&texture->resourceDesc),
+                initialState,
+                texture->desc.useClearValue ? &clearValue : nullptr,
+                IID_PPV_ARGS(&texture->resource));
+        }
 
         if (FAILED(hr))
         {
@@ -458,7 +520,14 @@ namespace nvrhi::d3d12
 
         ID3D12Resource* pResource = static_cast<ID3D12Resource*>(_texture.pointer);
 
-        Texture* texture = new Texture(m_Context, m_Resources, desc, pResource->GetDesc());
+        D3D12_RESOURCE_DESC1 resourceDesc1{};
+        RefCountPtr<ID3D12Resource2> resource2;
+        if (pResource->QueryInterface(IID_PPV_ARGS(&resource2)))
+            resourceDesc1 = resource2->GetDesc1();
+        else
+            *reinterpret_cast<D3D12_RESOURCE_DESC*>(&resourceDesc1) = pResource->GetDesc();
+
+        Texture* texture = new Texture(m_Context, m_Resources, desc, resourceDesc1);
         texture->resource = pResource;
         texture->postCreate();
 
@@ -881,11 +950,9 @@ namespace nvrhi::d3d12
     SamplerFeedbackTextureHandle Device::createSamplerFeedbackTexture(ITexture* pairedTexture, const SamplerFeedbackTextureDesc& desc)
     {
         Texture* texPair = checked_cast<Texture*>(pairedTexture);
-        TextureDesc descPair = texPair->desc;
-        D3D12_RESOURCE_DESC rdPair = texPair->resourceDesc;
+        TextureDesc const& descPair = texPair->desc;
 
-        D3D12_RESOURCE_DESC1 rdFeedback = {};
-        memcpy(&rdFeedback, &rdPair, sizeof(D3D12_RESOURCE_DESC));
+        D3D12_RESOURCE_DESC1 rdFeedback = texPair->resourceDesc;
         D3D12_HEAP_PROPERTIES heapPropsDefault = {};
         heapPropsDefault.Type = D3D12_HEAP_TYPE_DEFAULT;
         rdFeedback.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
@@ -907,14 +974,33 @@ namespace nvrhi::d3d12
 
         SamplerFeedbackTexture* texture = new SamplerFeedbackTexture(m_Context, desc, textureDesc, pairedTexture);
 
-        HRESULT hr = m_Context.device8->CreateCommittedResource2(
-            &heapPropsDefault,
-            D3D12_HEAP_FLAG_NONE,
-            &rdFeedback,
-            convertResourceStates(desc.initialState),
-            nullptr, // clear value
-            nullptr,
-            IID_PPV_ARGS(&texture->resource));
+        D3D12_RESOURCE_STATES const initialState = convertResourceStates(desc.initialState);
+        D3D12_BARRIER_LAYOUT const initialLayout = convertResourceStatesForEnhancedBarriers(desc.initialState, true).layout;
+
+        HRESULT hr;
+        if (m_EnhancedBarriersSupported)
+        {
+            hr = m_Context.device10->CreateCommittedResource3(
+                &heapPropsDefault,
+                D3D12_HEAP_FLAG_NONE,
+                &rdFeedback,
+                initialLayout,
+                nullptr, // clear value
+                nullptr,
+                0, nullptr,
+                IID_PPV_ARGS(&texture->resource));
+        }
+        else
+        {
+            hr = m_Context.device8->CreateCommittedResource2(
+                &heapPropsDefault,
+                D3D12_HEAP_FLAG_NONE,
+                &rdFeedback,
+                initialState,
+                nullptr, // clear value
+                nullptr,
+                IID_PPV_ARGS(&texture->resource));
+        }
 
         if (FAILED(hr))
         {
@@ -1175,6 +1261,13 @@ namespace nvrhi::d3d12
         }
 
         commitDescriptorHeaps();
+
+        if (m_EnableAutomaticBarriers)
+        {
+            requireSamplerFeedbackTextureState(texture, nvrhi::ResourceStates::UnorderedAccess);
+            m_BindingStatesDirty = true;
+        }
+        commitBarriers();
 
         const UINT clearValue[4] = { 0xFF, 0xFF, 0xFF, 0xFF };
         m_ActiveCommandList->commandList->ClearUnorderedAccessViewUint(

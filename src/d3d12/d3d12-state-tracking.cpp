@@ -70,6 +70,10 @@ namespace nvrhi::d3d12
                 requireBufferState(checked_cast<AccelStruct*>(binding.resourceHandle)->dataBuffer, ResourceStates::AccelStructRead);
                 break;
 
+            case ResourceType::SamplerFeedbackTexture_UAV:
+                requireSamplerFeedbackTextureState(checked_cast<ISamplerFeedbackTexture*>(binding.resourceHandle), ResourceStates::UnorderedAccess);
+                break;
+
             default:
                 // do nothing
                 break;
@@ -105,6 +109,103 @@ namespace nvrhi::d3d12
         const size_t barrierCount = textureBarriers.size() + bufferBarriers.size();
         if (barrierCount == 0)
             return;
+
+        if (m_Device->GetEnhancedBarriersSupported())
+        {
+            assert(m_ActiveCommandList->commandList7);
+            
+            m_D3DTextureBarriers.clear();
+            m_D3DBufferBarriers.clear();
+            
+            // Convert the texture barriers into D3D equivalents
+            for (const auto& barrier : textureBarriers)
+            {
+                const Texture* texture = nullptr;
+                ID3D12Resource* resource = nullptr;
+
+                if (barrier.texture->isSamplerFeedback)
+                {
+                    SamplerFeedbackTexture const* samplerFeedback = static_cast<SamplerFeedbackTexture const*>(barrier.texture);
+                    texture = checked_cast<Texture*>(samplerFeedback->pairedTexture.Get());
+                    resource = samplerFeedback->resource;
+                }
+                else
+                {
+                    texture = static_cast<const Texture*>(barrier.texture);
+                    resource = texture->resource;
+                }
+
+                D3D12_TEXTURE_BARRIER d3dbarrier{};
+                
+                EnhancedResourceStateMapping stateBefore = convertResourceStatesForEnhancedBarriers(barrier.stateBefore, true);
+                EnhancedResourceStateMapping stateAfter = convertResourceStatesForEnhancedBarriers(barrier.stateAfter, true);
+                d3dbarrier.SyncBefore = stateBefore.sync;
+                d3dbarrier.SyncAfter = stateAfter.sync;
+                d3dbarrier.AccessBefore = stateBefore.access;
+                d3dbarrier.AccessAfter = stateAfter.access;
+                d3dbarrier.LayoutBefore = stateBefore.layout;
+                d3dbarrier.LayoutAfter = stateAfter.layout;
+                d3dbarrier.pResource = resource;
+                if (barrier.entireTexture)
+                {
+                    d3dbarrier.Subresources.NumArraySlices = texture->desc.arraySize;
+                    d3dbarrier.Subresources.NumMipLevels = texture->desc.mipLevels;
+                }
+                else
+                {
+                    // TODO: D3D enhanced barriers and Vulkan synchronization2 both support barriers with subresource
+                    // ranges. We should redesign the barrier struct to allow using one entry per subresource range,
+                    // not one per subresource.
+                    d3dbarrier.Subresources.FirstArraySlice = barrier.arraySlice;
+                    d3dbarrier.Subresources.IndexOrFirstMipLevel = barrier.mipLevel;
+                    d3dbarrier.Subresources.NumArraySlices = 1;
+                    d3dbarrier.Subresources.NumMipLevels = 1;
+                }
+                d3dbarrier.Subresources.NumPlanes = texture->planeCount;
+                m_D3DTextureBarriers.push_back(d3dbarrier);
+            }
+
+            // Convert the buffer barriers into D3D equivalents
+            for (const auto& barrier : bufferBarriers)
+            {
+                const Buffer* buffer = static_cast<const Buffer*>(barrier.buffer);
+
+                D3D12_BUFFER_BARRIER d3dbarrier{};
+                
+                EnhancedResourceStateMapping stateBefore = convertResourceStatesForEnhancedBarriers(barrier.stateBefore, false);
+                EnhancedResourceStateMapping stateAfter = convertResourceStatesForEnhancedBarriers(barrier.stateAfter, false);
+                d3dbarrier.SyncBefore = stateBefore.sync;
+                d3dbarrier.SyncAfter = stateAfter.sync;
+                d3dbarrier.AccessBefore = stateBefore.access;
+                d3dbarrier.AccessAfter = stateAfter.access;
+                d3dbarrier.pResource = buffer->resource;
+                d3dbarrier.Size = buffer->desc.byteSize; // NVRHI doesn't support partial buffer barriers
+                m_D3DBufferBarriers.push_back(d3dbarrier);
+            }
+
+            static_vector<D3D12_BARRIER_GROUP, 2> barrierGroups;
+
+            if (!m_D3DTextureBarriers.empty())
+            {
+                D3D12_BARRIER_GROUP& barrierGroup = barrierGroups.emplace_back();
+                barrierGroup.Type = D3D12_BARRIER_TYPE_TEXTURE;
+                barrierGroup.NumBarriers = uint32_t(m_D3DTextureBarriers.size());
+                barrierGroup.pTextureBarriers = m_D3DTextureBarriers.data();
+            }
+            
+            if (!m_D3DBufferBarriers.empty())
+            {
+                D3D12_BARRIER_GROUP& barrierGroup = barrierGroups.emplace_back();
+                barrierGroup.Type = D3D12_BARRIER_TYPE_BUFFER;
+                barrierGroup.NumBarriers = uint32_t(m_D3DBufferBarriers.size());
+                barrierGroup.pBufferBarriers = m_D3DBufferBarriers.data();
+            }
+            
+            m_ActiveCommandList->commandList7->Barrier(uint32_t(barrierGroups.size()), barrierGroups.data());
+
+            m_StateTracker.clearBarriers();
+            return;
+        }
 
         // Allocate vector space for the barriers assuming 1:1 translation.
         // For partial transitions on multi-plane textures, original barriers may translate

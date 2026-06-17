@@ -135,6 +135,10 @@ namespace nvrhi::d3d12
         // Validation must be enabled before any other ray tracing call (including capability
         // queries).
         bool enableRayTracingValidation = false;
+
+        // Enable D3D12 Enhanced Barriers, if supported.
+        // Use device->queryFeatureSupport(Feature::EnhancedBarriers) to query the actual support.
+        bool enableEnhancedBarriers = true;
     };
 
     NVRHI_API DeviceHandle createDevice(const DeviceDesc& desc);
